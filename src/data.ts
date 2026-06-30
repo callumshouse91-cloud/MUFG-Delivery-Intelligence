@@ -1,17 +1,16 @@
 // ============================================================================
-// MUFG Delivery Intelligence — demo data
+// MUFG Connected Delivery — demo data
 // All data here is SYNTHETIC and ILLUSTRATIVE. No real MUFG or SmartCo names.
 // Edit copy / numbers here; the screens are built in render.ts.
 // ----------------------------------------------------------------------------
-// THE LADDER (no timeline). Capabilities appear at the level where their data
+// Build levels (no timeline). Capabilities appear at the level where their data
 // actually exists:
 //   L0 Foundation        — connect & capture; document chatbot; no predictions
 //   L1 Prove             — gates + financial mismatch (CURRENT-STATE FACT only)
 //   L2 Compound          — write-back, early-warning & gate PATTERNS (needs history)
 //   L3 Predict & expand  — predictive cross-portfolio insight + procurement/vendor
-// The growth spine is ACCUMULATED STRUCTURED HISTORY, not "connectors lit".
-// Insight is gated by that history. Climbing the toggle = the Delivery
-// Intelligence Debt curve, live.
+// The growth spine is accumulated structured delivery history, not "connectors lit".
+// Insight is gated by that history. Climbing the toggle shows how the data builds up.
 // ============================================================================
 
 export const LEVELS: any[] = [
@@ -133,11 +132,4 @@ export const PILLARS: any = {
   3:["All of the above","Cross-portfolio intelligence","Procurement & vendor flows","Decision governance"],
 };
 
-// Clean MUFG mark (rebuilt as SVG — the uploaded asset was watermarked).
-// Swap for the official asset in Cursor.
-export const MUFG_LOGO = `<svg width="104" height="28" viewBox="0 0 236 60" aria-label="MUFG">
-  <circle cx="44" cy="30" r="23" fill="none" stroke="#E50000" stroke-width="11"/>
-  <circle cx="72" cy="30" r="23" fill="none" stroke="#E50000" stroke-width="11"/>
-  <circle cx="72" cy="30" r="8.5" fill="#E50000"/>
-  <text x="108" y="44" font-family="'Noto Sans',sans-serif" font-weight="700" font-size="40" fill="#58595B" letter-spacing="2">MUFG</text>
-</svg>`;
+export const MUFG_LOGO = '<img src="/mufg-logo.webp" alt="MUFG" style="height:26px;width:auto;display:block" />';

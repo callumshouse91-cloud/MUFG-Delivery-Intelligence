@@ -1,4 +1,4 @@
-# MUFG Delivery Intelligence — demo
+# MUFG Connected Delivery — demo
 
 A clickable demo of SmartCo's phased approach for MUFG, built as a Vite + React + TypeScript project so you can drop it into Cursor and refine.
 
@@ -20,7 +20,7 @@ The whole story is the **build-level switch** in the top bar. We start narrow an
 - **Level 2 — Compound.** What the accruing history unlocks: **Artefact Studio** with **write-back to Plan View**, **early-warning** on the mismatch (drift, uncommitted costs, resource flags) and **gate patterns**.
 - **Level 3 — Predict & expand.** Genuine predictive cross-portfolio **AI Insights**, decision-focused governance, and the proven engine extended to **procurement** and **vendor / SoW** flows.
 
-The growth metric is **accumulated structured history**, not "connectors lit", and the Foundation screen shows the **Delivery Intelligence curve** live — the structured path compounds while the unstructured path stalls; the gap is Delivery Intelligence Debt (ties to the Campbell & Khan white paper).
+The growth metric is **accumulated structured delivery data**, not "connectors lit", and the Foundation screen shows how that data **builds up** level by level — what each amount of history enables, and why insight only appears once enough trusted data exists.
 
 ## What's interactive
 

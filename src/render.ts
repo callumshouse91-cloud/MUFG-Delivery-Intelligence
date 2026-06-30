@@ -1,5 +1,5 @@
 // ============================================================================
-// MUFG Delivery Intelligence — screen renderers
+// MUFG Connected Delivery — screen renderers
 // Each function returns an HTML string. App.tsx mounts these and handles clicks
 // via data-action attributes. Edit data in data.ts; edit screens here.
 // Refactor into React components in Cursor if/when you want.
@@ -17,30 +17,12 @@ const bar = (pct:number,color:string) => `<div class="bartrack"><div class="barf
 const hd = (eyebrow:string,title:string,desc?:string) =>
   `<div class="pagehd"><div class="eyebrow">${eyebrow}</div><h1>${title}</h1>${desc?`<p>${desc}</p>`:""}</div>`;
 
-/* ------------------- Delivery Intelligence Debt curve --------------------- */
-function diCurve(level:number){
-  const xs = [70,210,350,470];
-  const sy = [168,116,68,30];     // structured: value rises (y falls)
-  const uy = [168,134,158,120];   // unstructured: small gain, dip, slow recovery
-  const labels = ["Foundation","Prove","Compound","Predict"];
-  const path = (ys:number[]) => xs.map((x,i)=>`${i?"L":"M"}${x},${ys[i]}`).join(" ");
-  const i = level;
-  let gap = "";
-  if(uy[i]-sy[i] > 12){
-    gap = `<line x1="${xs[i]}" y1="${sy[i]}" x2="${xs[i]}" y2="${uy[i]}" stroke="#C62828" stroke-width="2" stroke-dasharray="3 3"/>
-           <text x="${xs[i]+7}" y="${(sy[i]+uy[i])/2+3}" font-size="10.5" font-weight="700" fill="#C62828">DI debt</text>`;
-  }
-  const dots = `<circle cx="${xs[i]}" cy="${sy[i]}" r="5" fill="#0065FC"/><circle cx="${xs[i]}" cy="${uy[i]}" r="4.5" fill="#9aa0a6"/>`;
-  const stageLabels = xs.map((x,j)=>`<text x="${x}" y="200" text-anchor="middle" font-size="10.5" font-weight="${j===i?"700":"500"}" fill="${j===i?"#E50000":"#6B6C6E"}">${labels[j]}</text>`).join("");
-  return `<svg viewBox="0 0 520 212" width="100%" style="max-width:520px">
-    <line x1="40" y1="182" x2="500" y2="182" stroke="#E0E1E3" stroke-width="1"/>
-    <path d="${path(uy)}" fill="none" stroke="#9aa0a6" stroke-width="2" stroke-dasharray="5 4"/>
-    <path d="${path(sy)}" fill="none" stroke="#0065FC" stroke-width="2.5"/>
-    ${gap}${dots}${stageLabels}
-    <text x="476" y="26" font-size="10" font-weight="700" fill="#0065FC">structured</text>
-    <text x="476" y="132" font-size="10" font-weight="700" fill="#9aa0a6">unstructured</text>
-  </svg>`;
-}
+const LEVEL_ENABLES: Record<number,string> = {
+  0: "Connect sources, score what can be trusted.",
+  1: "Enough to show current state \u2014 gate stalls and financial mismatch.",
+  2: "Enough history for early warnings and patterns.",
+  3: "Enough to predict, and to extend to new flows.",
+};
 
 /* ------------------------------- TOP BAR ---------------------------------- */
 export function renderTopbar(S:S){
@@ -54,7 +36,7 @@ export function renderTopbar(S:S){
     <span class="pillmini">Confidence <b>${L.conf}%</b></span>
     <span class="pillmini"><span class="dot"></span> data in \u00b7 no data out</span>
     <span class="pillmini">Illustrative \u00b7 synthetic data</span>`;
-  return `<div class="brand">${MUFG_LOGO}<span class="sub">Delivery Intelligence</span></div>
+  return `<div class="brand">${MUFG_LOGO}<span class="sub">Connected Delivery</span></div>
           <div class="levels">${levels}</div>
           <div class="topright">${right}</div>`;
 }
@@ -80,7 +62,7 @@ export function renderSidebar(S:S){
 function scrFoundation(S:S){
   const L = LEVELS[S.level];
   const pillars = PILLARS[S.level];
-  let html = hd("Foundation \u00b7 the data spine", "MUFG Delivery Intelligence",
+  let html = hd("Foundation \u00b7 the data spine", "MUFG Connected Delivery",
     `Level ${L.n}. ${L.name} \u2014 ${L.tag}. We start narrow and build up: each level captures more, and insight only appears once the history exists to support it. Nothing is replaced.`);
 
   html += `<div class="kpis" style="grid-template-columns:repeat(3,1fr)">
@@ -89,10 +71,17 @@ function scrFoundation(S:S){
     <div class="kpi"><div class="k">Sources connected</div><div class="v">${L.connectors}<small> / 9</small></div></div>
   </div>`;
 
-  // Delivery Intelligence Debt curve
-  html += `<div class="card" style="margin-bottom:16px"><div class="ch"><h3>The Delivery Intelligence curve</h3><span class="muted small" style="margin-left:auto">You are here: ${L.name}</span></div>
-    <div class="cb"><div style="display:flex;justify-content:center">${diCurve(S.level)}</div>
-    <p class="muted small" style="text-align:center;margin:6px 0 0">The structured path compounds. The unstructured path stalls and restarts. The gap between them is <b style="color:var(--sred)">Delivery Intelligence Debt</b> \u2014 the value never captured.</p></div></div>`;
+  html += `<div class="card" style="margin-bottom:16px"><div class="ch"><h3>Your delivery data, building up</h3><span class="muted small" style="margin-left:auto">You are here: ${L.name}</span></div>
+    <div class="cb">${LEVELS.map((lv:any)=>{
+      const cur = S.level === lv.n;
+      return `<div class="teamrow" style="gap:12px">
+        <span class="${cur?"b":""}" style="${cur?"color:var(--mufg-red)":""};min-width:130px">${lv.name}</span>
+        <span class="muted small" style="min-width:88px">${lv.hist}</span>
+        <span style="flex:1;min-width:72px">${bar(lv.histPct, cur?"var(--mufg-red)":"#c9cbcd")}</span>
+        <span class="muted small" style="flex:2">${LEVEL_ENABLES[lv.n]}</span>
+      </div>`;
+    }).join("")}
+    <p class="muted small" style="margin:10px 0 0">It all starts with connected, trusted data. The more structured delivery data you capture, the more the platform can do.</p></div></div>`;
 
   // architecture bands
   html += `<div class="card" style="margin-bottom:16px"><div class="ch"><h3>How it fits together</h3><span class="muted small" style="margin-left:auto">We surface, track and generate \u2014 we don't re-engineer what you don't own</span></div><div class="cb"><div class="bands">
@@ -310,7 +299,7 @@ function scrInsights(S:S){
   const items = INSIGHTS.filter((i:any)=>i.min<=S.level);
   let html = hd("Intelligence \u00b7 Predict & expand", "AI Insights",
     "Predictive, cross-portfolio intelligence \u2014 slippage, dependency cascades, benefits drift, prioritisation. This is the part that's structurally impossible without everything beneath it.");
-  html += `<div class="callout ok" style="margin-bottom:14px"><div>\u2713</div><div><b>Now possible.</b> Built on ${LEVELS[S.level].hist} of structured history. None of this was available at Prove or Compound \u2014 it's the compounding pay-off, and the opposite of Delivery Intelligence Debt.</div></div>`;
+  html += `<div class="callout ok" style="margin-bottom:14px"><div>\u2713</div><div><b>Now possible.</b> Built on ${LEVELS[S.level].hist} of accumulated structured delivery data \u2014 none of this was possible at the earlier levels, because the data wasn't there yet.</div></div>`;
   html += `<div class="card"><div class="cb">`;
   html += items.map((i:any)=>`<div class="insight"><span class="ibadge ${i.cat}">${(i.kind==="predictive"?"PREDICTED":i.cat.toUpperCase())}</span><div><div>${i.t}</div><div class="muted small" style="margin-top:4px">\u2192 ${i.a}</div></div></div>`).join("");
   html += `</div></div>`;
