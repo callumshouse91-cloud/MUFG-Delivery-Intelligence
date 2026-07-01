@@ -155,16 +155,19 @@ function scrGates(S:S){
   } else {
     html += `<div class="callout info" style="margin-bottom:14px"><div>\u2139</div><div><b>Current state only.</b> Gate patterns (e.g. average time per gate, recurring holds) appear at Compound, once a few cycles of history have accrued.</div></div>`;
   }
+  html += `<div id="gate-inbox-mount"></div>`;
   html += `<div class="row"><div style="flex:1"><div class="lanes">${lanes.map(g=>{
     const items = projects.filter((p:any)=>p.gate===g);
     return `<div class="lane"><h4>${g}<span>${items.length} project${items.length!==1?"s":""}</span></h4>${items.map((p:any)=>{
       const sel = S.gate===p.name?"sel":""; const late = p.daysInGate>14;
       const appr = p.approvers.filter((a:any)=>a.status==="approved").length;
+      const req = (p.requiredApproverIds?.length) || p.approvers.length;
       const chased = p.lastChasedAt ? `<span class="pill grey" style="font-size:10px;margin-left:6px">Chased</span>` : "";
+      const hist = p.history?.length ? `<span class="muted small" style="display:block;font-weight:400;margin-top:2px">${p.history[p.history.length-1].fromGate} \u2192 ${p.history[p.history.length-1].toGate}</span>` : "";
       return `<div class="gcard ${p.rag==="red"?"red":""} ${sel}" data-action="gate" data-name="${p.name}">
-        <div class="gt"><span class="rag ${p.rag}"></span>${p.name}${chased}</div>
-        <div class="gm"><span>${appr}/10 approved</span><span style="color:${late?"var(--sred)":"var(--muted)"}">${p.daysInGate}d in gate</span></div>
-        <div style="margin-top:7px">${bar(appr*10, appr>=9?"var(--green)":appr>=7?"var(--amber)":"var(--sred)")}</div>
+        <div class="gt"><span class="rag ${p.rag}"></span>${p.name}${chased}${hist}</div>
+        <div class="gm"><span>${appr}/${req} approved</span><span style="color:${late?"var(--sred)":"var(--muted)"}">${p.daysInGate}d in gate</span></div>
+        <div style="margin-top:7px">${bar(Math.round(appr/Math.max(req,1)*100), appr>=req-1?"var(--green)":appr>=req-3?"var(--amber)":"var(--sred)")}</div>
       </div>`;}).join("")||`<div class="muted small">None</div>`}</div>`;
   }).join("")}</div></div>`;
   const p = projects.find((x:any)=>x.name===S.gate);

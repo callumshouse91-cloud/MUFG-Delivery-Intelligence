@@ -2,6 +2,15 @@ import { useState, useEffect, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { renderTopbar, renderSidebar, renderMain } from "./render";
 import { NAV, POLICY } from "./data";
+import { buildEvidenceFromIngest, ingestApprovalEmail } from "./ingestApprovalEmail";
+import {
+  advanceProjectGate,
+  attachEvidenceToApprover,
+  newEvidenceId,
+  removeEvidenceFromApprover,
+  updateProjectInList,
+} from "./gateApproval";
+import { GateApprovalsInbox } from "./components/GateApprovalsInbox";
 import { GateChasePanel } from "./components/GateChasePanel";
 import { draftGateOutreach, resolveRecipientEmails } from "./draftGateOutreach";
 import {
@@ -11,14 +20,16 @@ import {
   selectedApproverIds,
   updateBodySalutation,
 } from "./gateEmail";
-import { findGateProject, seedGateProjects, STEERCO_MEMBERS } from "./gateSeed";
+import { findGateProject, findGateProjectById, seedGateProjects, STEERCO_MEMBERS } from "./gateSeed";
 import { loadStageGate, saveStageGate } from "./persist";
 import type {
+  ApprovalEvidence,
   ChaseMode,
   GateChaseUiState,
   GateProject,
   StageGateState,
 } from "./types/gate";
+import { EMPTY_APPROVAL_UI } from "./types/gate";
 
 function fallback(lang: string) {
   return lang === "en"
@@ -29,6 +40,7 @@ function fallback(lang: string) {
 const SEED: StageGateState = {
   projects: seedGateProjects(),
   chaseUi: null,
+  approvalUi: EMPTY_APPROVAL_UI,
 };
 
 function emptyChaseUi(projectId: string, mode: ChaseMode): GateChaseUiState {
@@ -58,8 +70,10 @@ export default function App() {
   );
   const [copyOk, setCopyOk] = useState(false);
   const [gateMount, setGateMount] = useState<HTMLElement | null>(null);
+  const [inboxMount, setInboxMount] = useState<HTMLElement | null>(null);
 
   const chaseUi = stageGate.chaseUi;
+  const approvalUi = stageGate.approvalUi;
   const selectedProject = findGateProject(stageGate.projects, gate);
 
   const S = {
@@ -80,12 +94,14 @@ export default function App() {
   }, [chat, nav]);
 
   useLayoutEffect(() => {
-    if (nav === "gates" && gate) {
-      setGateMount(document.getElementById("gate-chase-mount"));
+    if (nav === "gates") {
+      setInboxMount(document.getElementById("gate-inbox-mount"));
+      setGateMount(gate ? document.getElementById("gate-chase-mount") : null);
     } else {
+      setInboxMount(null);
       setGateMount(null);
     }
-  }, [nav, gate, stageGate.projects, chaseUi]);
+  }, [nav, gate, stageGate.projects, chaseUi, approvalUi]);
 
   const runDraft = useCallback(
     async (project: GateProject, mode: ChaseMode, selectedRecipientIds?: string[]) => {
@@ -183,9 +199,9 @@ export default function App() {
         ? { ...p, lastChasedAt: now, lastChaseMode: chaseUi.mode }
         : p
     );
-    setStageGate({ projects, chaseUi: null });
-    saveStageGate({ projects, chaseUi: null });
-  }, [chaseUi, selectedProject, stageGate.projects]);
+    setStageGate({ projects, chaseUi: null, approvalUi });
+    saveStageGate({ projects, chaseUi: null, approvalUi });
+  }, [chaseUi, selectedProject, stageGate.projects, approvalUi]);
 
   const handleRedraft = useCallback(() => {
     if (!selectedProject || !chaseUi) return;
@@ -195,6 +211,199 @@ export default function App() {
   const clearChaseUi = useCallback(() => {
     setStageGate((prev) => ({ ...prev, chaseUi: null }));
   }, []);
+
+  const persistStageGate = useCallback((next: StageGateState) => {
+    setStageGate(next);
+    saveStageGate(next);
+  }, []);
+
+  const applyEvidence = useCallback(
+    (
+      projectId: string,
+      approverId: string,
+      evidence: ApprovalEvidence,
+      toast: string
+    ) => {
+      const project = stageGate.projects.find((p) => p.id === projectId);
+      if (!project) return;
+      const updated = attachEvidenceToApprover(project, approverId, evidence);
+      const projects = updateProjectInList(stageGate.projects, updated);
+      const next: StageGateState = {
+        ...stageGate,
+        projects,
+        approvalUi: {
+          ...EMPTY_APPROVAL_UI,
+          toast,
+        },
+        chaseUi: null,
+      };
+      persistStageGate(next);
+      const match = findGateProjectById(projects, projectId);
+      if (match && gate !== match.name) setGate(match.name);
+    },
+    [stageGate, gate, persistStageGate]
+  );
+
+  const handleCaptureInbox = useCallback(async () => {
+    const raw = approvalUi.inboxText.trim();
+    if (!raw) return;
+    setStageGate((prev) => ({
+      ...prev,
+      approvalUi: { ...prev.approvalUi, inboxLoading: true, suggestion: null },
+    }));
+    const result = await ingestApprovalEmail({
+      rawEmail: raw,
+      projects: stageGate.projects,
+    });
+    const confident =
+      result.matched &&
+      result.confidence != null &&
+      result.confidence >= 0.6 &&
+      result.projectId &&
+      result.approverId;
+
+    if (confident) {
+      const meta = buildEvidenceFromIngest(result, "auto");
+      const evidence: ApprovalEvidence = {
+        id: newEvidenceId(),
+        source: "auto",
+        kind: "email",
+        from: meta.from,
+        subject: meta.subject,
+        receivedAt: new Date().toISOString(),
+        snippet: meta.snippet,
+        confidence: meta.confidence,
+      };
+      const project = stageGate.projects.find((p) => p.id === result.projectId);
+      const team = result.team ?? project?.approvers.find((a) => a.id === result.approverId)?.team;
+      applyEvidence(
+        result.projectId!,
+        result.approverId!,
+        evidence,
+        `Auto-attached approval from ${team ?? "team"} to ${project?.gate ?? "gate"}`
+      );
+      return;
+    }
+
+    setStageGate((prev) => ({
+      ...prev,
+      approvalUi: {
+        ...prev.approvalUi,
+        inboxLoading: false,
+        suggestion: result.matched ? result : null,
+        toast: result.matched
+          ? null
+          : "Could not match this email to an outstanding approval — try manual attach.",
+      },
+    }));
+  }, [approvalUi.inboxText, stageGate.projects, applyEvidence]);
+
+  const handleConfirmSuggestion = useCallback(() => {
+    const result = approvalUi.suggestion;
+    if (!result?.projectId || !result.approverId) return;
+    const meta = buildEvidenceFromIngest(result, "auto");
+    const evidence: ApprovalEvidence = {
+      id: newEvidenceId(),
+      source: "auto",
+      kind: "email",
+      from: meta.from,
+      subject: meta.subject,
+      receivedAt: new Date().toISOString(),
+      snippet: meta.snippet,
+      confidence: meta.confidence,
+    };
+    const project = stageGate.projects.find((p) => p.id === result.projectId);
+    applyEvidence(
+      result.projectId,
+      result.approverId,
+      evidence,
+      `Attached approval from ${result.team ?? "team"} to ${project?.gate ?? "gate"}`
+    );
+  }, [approvalUi.suggestion, stageGate.projects, applyEvidence]);
+
+  const handleAttachEmail = useCallback(() => {
+    if (!selectedProject || !approvalUi.attachApproverId) return;
+    const paste = approvalUi.attachPaste.trim();
+    if (!paste) return;
+    const evidence: ApprovalEvidence = {
+      id: newEvidenceId(),
+      source: "manual",
+      kind: "email",
+      receivedAt: new Date().toISOString(),
+      snippet: paste.slice(0, 240),
+      subject: paste.match(/^Subject:\s*(.+)/im)?.[1]?.trim(),
+      from: paste.match(/^From:\s*(.+)/im)?.[1]?.trim(),
+    };
+    const updated = attachEvidenceToApprover(
+      selectedProject,
+      approvalUi.attachApproverId,
+      evidence
+    );
+    const projects = updateProjectInList(stageGate.projects, updated);
+    persistStageGate({
+      ...stageGate,
+      projects,
+      approvalUi: { ...approvalUi, attachApproverId: null, attachPaste: "" },
+    });
+  }, [selectedProject, approvalUi, stageGate, persistStageGate]);
+
+  const handleAttachFile = useCallback(
+    async (file: File) => {
+      if (!selectedProject || !approvalUi.attachApproverId) return;
+      let snippet = `Uploaded ${file.name}`;
+      if (file.type.startsWith("text/") || file.name.endsWith(".txt") || file.name.endsWith(".eml")) {
+        try {
+          const text = await file.text();
+          snippet = text.slice(0, 240);
+        } catch {
+          /* keep default snippet */
+        }
+      }
+      const evidence: ApprovalEvidence = {
+        id: newEvidenceId(),
+        source: "manual",
+        kind: "file",
+        receivedAt: new Date().toISOString(),
+        snippet,
+        fileName: file.name,
+        fileType: file.type || file.name.split(".").pop(),
+      };
+      const updated = attachEvidenceToApprover(
+        selectedProject,
+        approvalUi.attachApproverId,
+        evidence
+      );
+      const projects = updateProjectInList(stageGate.projects, updated);
+      persistStageGate({
+        ...stageGate,
+        projects,
+        approvalUi: { ...approvalUi, attachApproverId: null, attachPaste: "" },
+      });
+    },
+    [selectedProject, approvalUi, stageGate, persistStageGate]
+  );
+
+  const handleRemoveEvidence = useCallback(
+    (approverId: string, evidenceId: string) => {
+      if (!selectedProject) return;
+      const updated = removeEvidenceFromApprover(selectedProject, approverId, evidenceId);
+      const projects = updateProjectInList(stageGate.projects, updated);
+      persistStageGate({ ...stageGate, projects });
+    },
+    [selectedProject, stageGate, persistStageGate]
+  );
+
+  const handleAdvanceGate = useCallback(() => {
+    if (!selectedProject) return;
+    const updated = advanceProjectGate(selectedProject);
+    const projects = updateProjectInList(stageGate.projects, updated);
+    persistStageGate({
+      ...stageGate,
+      projects,
+      chaseUi: null,
+      approvalUi: { ...approvalUi, historyExpanded: true },
+    });
+  }, [selectedProject, stageGate, approvalUi, persistStageGate]);
 
   useEffect(() => {
     if (nav !== "gates") clearChaseUi();
@@ -264,6 +473,7 @@ export default function App() {
   }
 
   const gateMountNode = gateMount;
+  const inboxMountNode = inboxMount;
 
   return (
     <div onClick={onClick} onKeyDown={onKey}>
@@ -272,10 +482,48 @@ export default function App() {
         <nav className="sidebar" dangerouslySetInnerHTML={{ __html: renderSidebar(S) }} />
         <main className="main" dangerouslySetInnerHTML={{ __html: renderMain(S) }} />
       </div>
+      {inboxMountNode
+        ? createPortal(
+            <GateApprovalsInbox
+              inboxText={approvalUi.inboxText}
+              loading={approvalUi.inboxLoading}
+              suggestion={approvalUi.suggestion}
+              toast={approvalUi.toast}
+              onTextChange={(inboxText) =>
+                setStageGate((prev) => ({
+                  ...prev,
+                  approvalUi: { ...prev.approvalUi, inboxText },
+                }))
+              }
+              onCapture={() => void handleCaptureInbox()}
+              onConfirmSuggestion={handleConfirmSuggestion}
+              onDismissSuggestion={() =>
+                setStageGate((prev) => ({
+                  ...prev,
+                  approvalUi: { ...prev.approvalUi, suggestion: null, inboxLoading: false },
+                }))
+              }
+              onSeedClick={(body) =>
+                setStageGate((prev) => ({
+                  ...prev,
+                  approvalUi: { ...prev.approvalUi, inboxText: body },
+                }))
+              }
+              onDismissToast={() =>
+                setStageGate((prev) => ({
+                  ...prev,
+                  approvalUi: { ...prev.approvalUi, toast: null },
+                }))
+              }
+            />,
+            inboxMountNode
+          )
+        : null}
       {gateMountNode && selectedProject
         ? createPortal(
             <GateChasePanel
               project={selectedProject}
+              approvalUi={approvalUi}
               mode={chaseUi?.mode ?? "chase"}
               loading={chaseUi?.loading ?? false}
               error={chaseUi?.error ?? null}
@@ -305,6 +553,54 @@ export default function App() {
               onSwitchEscalate={() => startChase("escalate")}
               onStartChase={() => startChase("chase")}
               onStartEscalate={() => startChase("escalate")}
+              onOpenAttach={(approverId) =>
+                setStageGate((prev) => ({
+                  ...prev,
+                  approvalUi: {
+                    ...prev.approvalUi,
+                    attachApproverId: approverId,
+                    attachTab: "email",
+                    attachPaste: "",
+                  },
+                }))
+              }
+              onCloseAttach={() =>
+                setStageGate((prev) => ({
+                  ...prev,
+                  approvalUi: { ...prev.approvalUi, attachApproverId: null, attachPaste: "" },
+                }))
+              }
+              onAttachTab={(attachTab) =>
+                setStageGate((prev) => ({
+                  ...prev,
+                  approvalUi: { ...prev.approvalUi, attachTab },
+                }))
+              }
+              onAttachPasteChange={(attachPaste) =>
+                setStageGate((prev) => ({
+                  ...prev,
+                  approvalUi: { ...prev.approvalUi, attachPaste },
+                }))
+              }
+              onAttachEmailSubmit={handleAttachEmail}
+              onAttachFile={(file) => void handleAttachFile(file)}
+              onRemoveEvidence={handleRemoveEvidence}
+              onToggleEvidenceExpand={(expandedEvidenceApproverId) =>
+                setStageGate((prev) => ({
+                  ...prev,
+                  approvalUi: { ...prev.approvalUi, expandedEvidenceApproverId },
+                }))
+              }
+              onAdvanceGate={handleAdvanceGate}
+              onToggleHistory={() =>
+                setStageGate((prev) => ({
+                  ...prev,
+                  approvalUi: {
+                    ...prev.approvalUi,
+                    historyExpanded: !prev.approvalUi.historyExpanded,
+                  },
+                }))
+              }
             />,
             gateMountNode
           )

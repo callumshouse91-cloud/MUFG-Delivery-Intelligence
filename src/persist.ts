@@ -1,4 +1,5 @@
-import type { BoardState, StageGateState } from "./types/gate";
+import type { BoardState, GateProject, StageGateState } from "./types/gate";
+import { EMPTY_APPROVAL_UI } from "./types/gate";
 
 export const WORKSHOP_ID = "mufg-connected-delivery";
 
@@ -38,7 +39,12 @@ export function saveBoardState(patch: Partial<BoardState>): BoardState {
 }
 
 export function saveStageGate(stageGate: StageGateState): StageGateState {
-  saveBoardState({ stageGate });
+  const toSave: StageGateState = {
+    projects: stageGate.projects,
+    chaseUi: null,
+    approvalUi: EMPTY_APPROVAL_UI,
+  };
+  saveBoardState({ stageGate: toSave });
   return stageGate;
 }
 
@@ -48,18 +54,40 @@ export function loadStageGate(fallback: StageGateState): StageGateState {
   return {
     projects: mergeProjects(fallback.projects, stored.projects),
     chaseUi: null,
+    approvalUi: EMPTY_APPROVAL_UI,
   };
 }
 
-function mergeProjects(seed: StageGateState["projects"], stored: StageGateState["projects"]) {
+function mergeApprover(
+  seed: GateProject["approvers"][0],
+  saved: GateProject["approvers"][0] | undefined
+) {
+  if (!saved) return { ...seed, evidence: seed.evidence ?? [] };
+  return {
+    ...seed,
+    status: saved.status,
+    approvedAt: saved.approvedAt,
+    evidence: saved.evidence ?? [],
+    daysOutstanding: saved.daysOutstanding,
+  };
+}
+
+function mergeProjects(seed: GateProject[], stored: GateProject[]): GateProject[] {
   const byId = new Map(stored.map((p) => [p.id, p]));
   return seed.map((p) => {
     const saved = byId.get(p.id);
     if (!saved) return p;
+    const approverById = new Map(saved.approvers.map((a) => [a.id, a]));
     return {
       ...p,
+      gate: saved.gate,
+      daysInGate: saved.daysInGate,
+      history: saved.history?.length ? saved.history : p.history,
+      gateOrder: saved.gateOrder?.length ? saved.gateOrder : p.gateOrder,
+      requiredApproverIds: saved.requiredApproverIds,
       lastChasedAt: saved.lastChasedAt,
       lastChaseMode: saved.lastChaseMode,
+      approvers: p.approvers.map((a) => mergeApprover(a, approverById.get(a.id))),
     };
   });
 }
