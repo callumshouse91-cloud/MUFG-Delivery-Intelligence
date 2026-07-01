@@ -4,7 +4,7 @@
 // via data-action attributes. Edit data in data.ts; edit screens here.
 // Refactor into React components in Cursor if/when you want.
 // ============================================================================
-import { LEVELS, NAV, CONNECTORS, TEAMS, PROJECTS, INSIGHTS, FACTS, POLICY, LIVE, PILLARS, MUFG_LOGO } from "./data";
+import { LEVELS, NAV, CONNECTORS, PROJECTS, INSIGHTS, FACTS, POLICY, LIVE, PILLARS, MUFG_LOGO } from "./data";
 
 type S = any;
 
@@ -147,6 +147,7 @@ function scrPortfolio(S:S){
 
 function scrGates(S:S){
   const lanes = ["AG1","AG2","AG3"];
+  const projects = S.gateProjects || [];
   let html = hd("Delivery \u00b7 Prove", "Stage-Gate Tracker",
     "Where every project is stuck, across assurance gates AG1\u2013AG3. The data already lives in Plan View \u2014 we elevate it to the right form, and draft the chase.");
   if(S.level >= 2){
@@ -155,24 +156,21 @@ function scrGates(S:S){
     html += `<div class="callout info" style="margin-bottom:14px"><div>\u2139</div><div><b>Current state only.</b> Gate patterns (e.g. average time per gate, recurring holds) appear at Compound, once a few cycles of history have accrued.</div></div>`;
   }
   html += `<div class="row"><div style="flex:1"><div class="lanes">${lanes.map(g=>{
-    const items = PROJECTS.filter((p:any)=>p.gate===g);
+    const items = projects.filter((p:any)=>p.gate===g);
     return `<div class="lane"><h4>${g}<span>${items.length} project${items.length!==1?"s":""}</span></h4>${items.map((p:any)=>{
-      const sel = S.gate===p.name?"sel":""; const late = p.days>14;
+      const sel = S.gate===p.name?"sel":""; const late = p.daysInGate>14;
+      const appr = p.approvers.filter((a:any)=>a.status==="approved").length;
+      const chased = p.lastChasedAt ? `<span class="pill grey" style="font-size:10px;margin-left:6px">Chased</span>` : "";
       return `<div class="gcard ${p.rag==="red"?"red":""} ${sel}" data-action="gate" data-name="${p.name}">
-        <div class="gt"><span class="rag ${p.rag}"></span>${p.name}</div>
-        <div class="gm"><span>${p.appr}/10 approved</span><span style="color:${late?"var(--sred)":"var(--muted)"}">${p.days}d in gate</span></div>
-        <div style="margin-top:7px">${bar(p.appr*10, p.appr>=9?"var(--green)":p.appr>=7?"var(--amber)":"var(--sred)")}</div>
+        <div class="gt"><span class="rag ${p.rag}"></span>${p.name}${chased}</div>
+        <div class="gm"><span>${appr}/10 approved</span><span style="color:${late?"var(--sred)":"var(--muted)"}">${p.daysInGate}d in gate</span></div>
+        <div style="margin-top:7px">${bar(appr*10, appr>=9?"var(--green)":appr>=7?"var(--amber)":"var(--sred)")}</div>
       </div>`;}).join("")||`<div class="muted small">None</div>`}</div>`;
   }).join("")}</div></div>`;
-  const p = PROJECTS.find((x:any)=>x.name===S.gate);
+  const p = projects.find((x:any)=>x.name===S.gate);
   html += `<div class="card" style="flex:0 0 360px">${ p ? `
     <div class="ch"><h3>${p.name}</h3><span class="pill ${p.rag}" style="margin-left:auto"><span class="rag ${p.rag}"></span>${p.gate}</span></div>
-    <div class="cb"><div class="muted small" style="margin-bottom:10px">Owner ${p.owner} \u00b7 ${p.days} days in gate \u00b7 ${p.appr}/10 approvals</div>
-    ${TEAMS.map((t:string)=>{const ok=!p.out.includes(t); return `<div class="teamrow"><span>${t}</span>${ok?`<span class="pill green">\u2713 Approved</span>`:`<span class="pill red">Outstanding</span>`}</div>`;}).join("")}
-    ${p.out.length?`<div class="callout info" style="margin-top:12px"><div>\u270D</div><div><b>Drafted chase</b> to ${p.out.join(", ")}: \u201CYour approval for ${p.name} (${p.gate}) is outstanding and now holding the gate. Could you review by EOD tomorrow?\u201D <span class="illus">illustrative</span></div></div>
-      <div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary">${arrow} Chase all outstanding</button><button class="btn">Escalate to Steerco</button></div>`
-      :`<div class="callout ok" style="margin-top:12px"><div>\u2713</div><div>All approvals in. Ready to close the gate.</div></div>`}
-    </div>`
+    <div id="gate-chase-mount"></div>`
     : `<div class="ch"><h3>Gate detail</h3></div><div class="cb"><p class="muted">Select a project card to see its 10-team approval matrix, the drafted chase, and the escalation option.</p></div>` }
   </div></div>`;
   return html;
